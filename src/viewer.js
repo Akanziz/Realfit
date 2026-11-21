@@ -39,8 +39,8 @@ function shape(mesh, rings, motion = 0, fabricMotion = null) {
     for (let column = 0; column < segments; column++) {
       const angle = column / segments * Math.PI * 2;
       const folds = fabricMotion !== null
-        ? (0.0014 + 0.008 * Math.abs(fabricMotion) * Math.exp(-((t - 0.53) ** 2) / 0.025))
-          * (Math.sin(85 * t + 4 * Math.cos(angle)) + 0.5 * Math.cos(9 * angle + 24 * t))
+        ? (0.0007 + 0.003 * Math.abs(fabricMotion) * Math.exp(-((t - 0.53) ** 2) / 0.025))
+          * (Math.sin(55 * t + 3 * Math.cos(angle)) + 0.25 * Math.cos(5 * angle + 16 * t))
         : 0;
       position.setXYZ(row * segments + column,
         cx + (width + folds) * Math.cos(angle),
@@ -58,6 +58,7 @@ function ring(t, x, y, circumference, ratio, z = 0) {
 
 export function createViewer(container) {
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.localClippingEnabled = true;
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   container.append(renderer.domElement);
   const scene = new THREE.Scene();
@@ -81,11 +82,16 @@ export function createViewer(container) {
 
   const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0xb7a492, side: THREE.DoubleSide });
   const denimMaterial = new THREE.MeshStandardMaterial({ color: 0x26496b, roughness: 0.94, side: THREE.DoubleSide });
-  const torso = surface(bodyMaterial);
+  // Render only the exposed body surfaces when clothing is selected.
+  const waistCut = new THREE.Plane(new THREE.Vector3(0, 1, 0));
+  const hemCut = new THREE.Plane(new THREE.Vector3(0, -1, 0));
+  const torsoMaterial = bodyMaterial.clone();
+  const legMaterial = bodyMaterial.clone();
+  const torso = surface(torsoMaterial);
   const hips = surface(denimMaterial);
   const legs = [-1, 1].map(side => ({
     side,
-    body: surface(bodyMaterial),
+    body: surface(legMaterial),
     denim: surface(denimMaterial),
     foot: new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), bodyMaterial),
   }));
@@ -103,6 +109,13 @@ export function createViewer(container) {
     const { waist, hip, thigh, inseam } = measurements;
     const crotch = inseam * inches + 0.07;
     const waistY = crotch + 0.24;
+    const hemY = pattern
+      ? THREE.MathUtils.clamp(crotch - pattern.inseam * inches, 0.045, crotch - 0.2)
+      : 0;
+    torsoMaterial.clippingPlanes = pattern ? [waistCut] : null;
+    legMaterial.clippingPlanes = pattern ? [hemCut] : null;
+    waistCut.constant = -waistY;
+    hemCut.constant = hemY;
     const [hipRadius] = ellipse(hip, 0.69);
     const [thighRadius] = ellipse(thigh, 0.86);
     const legOffset = Math.max(hipRadius * 0.49, thighRadius * 0.91);
@@ -141,7 +154,6 @@ export function createViewer(container) {
       foot.scale.set(thighRadius * 0.52, 0.047, 0.107);
       denim.visible = Boolean(pattern);
       if (!pattern) continue;
-      const hemY = THREE.MathUtils.clamp(crotch - pattern.inseam * inches, 0.045, crotch - 0.2);
       shape(denim, [
         ring(0, x * 0.83, crotch + 0.072, clearance(pattern.thigh, thigh) * 0.79, 0.86),
         ring(0.12, x, crotch - 0.025, clearance(pattern.thigh, thigh), 0.86),
