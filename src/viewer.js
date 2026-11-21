@@ -49,7 +49,70 @@ function shape(mesh, rings, motion = 0, fabricMotion = null) {
     }
   }
   position.needsUpdate = true;
-  mesh.geometry.computeVertexNormals();
+}
+
+// Split the seat ring into two half-rings. A shared front-to-back curve
+// completes both leg openings and gives the jeans a continuous crotch.
+function joinJeans(seat, left, right, material) {
+  const panels = [seat, left, right];
+  const seatEnd = rows * segments;
+  const half = segments / 2;
+  const panelSize = (rows + 1) * segments;
+  const crotchStart = panelSize;
+  let next = panelSize + half - 1;
+  const geometry = new THREE.BufferGeometry();
+  const index = [];
+  const maps = panels.map((panel, panelIndex) => {
+    const start = panelIndex === 1 ? segments / 4 : 3 * segments / 4;
+    return Array.from({ length: panelSize }, (_, vertex) => {
+      if (panelIndex === 0) return vertex;
+      if (vertex >= segments) return next++;
+      const arc = (vertex - start + segments) % segments;
+      if (arc <= half) return seatEnd + vertex;
+      const bridge = arc - half;
+      return crotchStart + (panelIndex === 1 ? bridge : half - bridge) - 1;
+    });
+  });
+  panels.forEach((panel, i) => {
+    for (const vertex of panel.geometry.index.array) index.push(maps[i][vertex]);
+  });
+  const positions = new THREE.BufferAttribute(new Float32Array(next * 3), 3);
+  positions.setUsage(THREE.DynamicDrawUsage);
+  geometry.setAttribute('position', positions);
+  geometry.setIndex(index);
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.frustumCulled = false;
+
+  function update() {
+    const seatPositions = seat.geometry.attributes.position;
+    positions.array.set(seatPositions.array);
+    const front = seatEnd + segments / 4;
+    const back = seatEnd + 3 * segments / 4;
+    for (let point = 1; point < half; point++) {
+      const t = point / half;
+      const blend = (1 - Math.cos(Math.PI * t)) / 2;
+      positions.setXYZ(crotchStart + point - 1, 0,
+        THREE.MathUtils.lerp(positions.getY(back), positions.getY(front), blend) - 0.045 * Math.sin(Math.PI * t),
+        THREE.MathUtils.lerp(positions.getZ(back), positions.getZ(front), blend));
+    }
+    panels.slice(1).forEach((panel, i) => {
+      const source = panel.geometry.attributes.position;
+      const map = maps[i + 1];
+      for (let vertex = segments; vertex < panelSize; vertex++) {
+        const row = Math.floor(vertex / segments);
+        const blend = THREE.MathUtils.smoothstep(row / rows, 0, 0.24);
+        const join = map[vertex % segments];
+        positions.setXYZ(map[vertex],
+          THREE.MathUtils.lerp(positions.getX(join), source.getX(vertex), blend),
+          THREE.MathUtils.lerp(positions.getY(join), source.getY(vertex), blend) - 0.16 * (row / rows) * (1 - blend),
+          THREE.MathUtils.lerp(positions.getZ(join), source.getZ(vertex), blend));
+      }
+    });
+    positions.needsUpdate = true;
+    geometry.computeVertexNormals();
+  }
+
+  return { mesh, update };
 }
 
 function ring(t, x, y, circumference, ratio, z = 0) {
@@ -95,7 +158,8 @@ export function createViewer(container) {
     denim: surface(denimMaterial),
     foot: new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), bodyMaterial),
   }));
-  scene.add(torso, hips, ...legs.flatMap(({ body, denim, foot }) => [body, denim, foot]));
+  const jeans = joinJeans(hips, legs[0].denim, legs[1].denim, denimMaterial);
+  scene.add(torso, jeans.mesh, ...legs.flatMap(({ body, foot }) => [body, foot]));
 
   let measurements;
   let pattern;
@@ -127,15 +191,16 @@ export function createViewer(container) {
       ring(0.83, 0, crotch + 0.10, hip, 0.69),
       ring(1, 0, crotch - 0.02, hip * 0.69, 0.60),
     ]);
-    hips.visible = Boolean(pattern);
+    torso.geometry.computeVertexNormals();
+    jeans.mesh.visible = Boolean(pattern);
     const clearance = (garment, body) => Math.max(garment, body + 0.85);
     if (pattern) {
       shape(hips, [
         ring(0, 0, waistY, clearance(pattern.waist, waist), 0.73),
         ring(0.16, 0, waistY - 0.037, clearance(pattern.waist, waist) + 0.35, 0.73),
         ring(0.59, 0, crotch + 0.10, clearance(pattern.hip, hip), 0.69),
-        ring(1, 0, crotch - 0.028, clearance(pattern.hip, hip) * 0.76, 0.60),
-      ], 0, 0);
+        ring(1, 0, crotch + 0.048, clearance(pattern.hip, hip) * 0.96, 0.69),
+      ]);
     }
 
     for (const { side, body, denim, foot } of legs) {
@@ -150,18 +215,21 @@ export function createViewer(container) {
         ring(0.68, x * 1.06, kneeY - 0.12, thigh * 0.70, 0.86),
         ring(1, x * 1.1, 0.068, ankle, 0.86),
       ], pose);
+      body.geometry.computeVertexNormals();
       foot.position.set(x * 1.1, 0.049, 0.042);
       foot.scale.set(thighRadius * 0.52, 0.047, 0.107);
-      denim.visible = Boolean(pattern);
       if (!pattern) continue;
+      const [denimThighRadius] = ellipse(clearance(pattern.thigh, thigh), 0.86);
+      const denimX = side * Math.max(legOffset, denimThighRadius);
       shape(denim, [
-        ring(0, x * 0.83, crotch + 0.072, clearance(pattern.thigh, thigh) * 0.79, 0.86),
-        ring(0.12, x, crotch - 0.025, clearance(pattern.thigh, thigh), 0.86),
+        ring(0, denimX, crotch + 0.048, clearance(pattern.thigh, thigh) * 0.79, 0.86),
+        ring(0.12, denimX, crotch - 0.025, clearance(pattern.thigh, thigh), 0.86),
         ring(0.52, x * 1.04, kneeY, clearance(pattern.knee, knee), 0.86),
         ring(0.68, x * 1.06, THREE.MathUtils.lerp(kneeY, hemY, 0.35), clearance(pattern.knee, thigh * 0.70), 0.86),
         ring(1, x * 1.1, hemY, clearance(pattern.hem, ankle), 0.86),
       ], pose, fabric);
     }
+    if (pattern) jeans.update();
   }
 
   const resize = () => {
