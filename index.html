@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#f7f5ef">
+<title>RealFit — Denim fitting room</title>
+</head>
+<body>
+<header><a href="./" aria-label="RealFit home">Real<span>Fit</span></a><span>DENIM FITTING ROOM</span></header>
+<main>
+<section class="intro"><h1>See how it fits.</h1><p>Shape the mannequin to your measurements and compare two jean sizes.</p></section>
+<div class="layout">
+<section class="viewer" aria-label="3D fitting room">
+<div id="scene" aria-label="Interactive 3D mannequin"></div>
+<div class="viewer-top"><span id="view-label">STRAIGHT DENIM · W34</span><button id="reset" type="button">Reset view</button></div>
+<div class="viewer-bottom"><span>Drag to rotate · Scroll to zoom</span><button id="pose" type="button" aria-pressed="false">Bend knees</button></div>
+<p id="viewer-error" role="alert" hidden>The 3D viewer needs a browser with WebGL 2 enabled.</p>
+</section>
+<aside>
+<form id="measurements">
+<h2>Your measurements</h2>
+<p>Enter body measurements in inches.</p>
+<div id="fields" class="fields"></div>
+</form>
+<fieldset><legend>Compare sizes</legend>
+<div class="sizes">
+<label><input type="radio" name="size" value="34" checked><span>W34</span></label>
+<label><input type="radio" name="size" value="36"><span>W36</span></label>
+<label><input type="radio" name="size" value="body"><span>Body only</span></label>
+</div>
+</fieldset>
+<section class="fit"><h2>Garment room</h2><p>Garment circumference minus body circumference.</p><dl id="room" aria-live="polite"></dl></section>
+<p class="note">Uses an uncalibrated sample jean pattern and approximate fabric motion. Fit estimates need validation against measured jeans.</p>
+</aside>
+</div>
+</main>
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>
